@@ -82,7 +82,7 @@ def compute_and_save():
     d_proc = pickle_cv2(d)
     np.savez('resources/arrays',a=a,b=b,c=c,d_proc=d_proc,e=e,f=f)
 # Uncomment next line to overwrite test data (not recommended)
-#compute_and_save()
+compute_and_save()
 
 
 '''

@@ -256,17 +256,22 @@ class SimpleFeatureDescriptor(FeatureDescriptor):
 
         for i, f in enumerate(keypoints):
             x, y = f.pt
+            w, h = grayImage.shape
 
             # TODO 4: The simple descriptor is a 5x5 window of intensities
             # sampled centered on the feature point. Store the descriptor
             # as a row-major vector. Treat pixels outside the image as zero.
             # TODO-BLOCK-BEGIN
-            myRange = 5/2
-            index = 0;
-            for row in range(-myRange, myRange):
-                for col in range(-myRange, myRange):
-                    desc[index] = grayImage[x+col][y+row]
-                    index += 1
+            for row in range(5):
+                for col in range(5):
+                	curY = x+col-2
+                	curX = y+row-2
+                	if (curX >= 0 and curX < w and curY >= 0 and curY < h):
+                		desc[i][col + 5 * row] = grayImage[curX][curY]
+                	else:
+                		desc[i][col + 5 * row] = 0
+                	
+                    
             # TODO-BLOCK-END
 
         return desc
@@ -304,14 +309,39 @@ class MOPSFeatureDescriptor(FeatureDescriptor):
             # TODO-BLOCK-BEGIN
             x, y = f.pt
 
-            trans = transformations.get_trans_mx(np.array([x, y, 0]))
-            rotate = transformations.get_rot_mx(0, 0, f.angle)
-            origin = transformations.get_trans_mx(np.array([-windowSize/2, -windowSize/2, 0]))
-            scale = transformations.get_scale_mx(0.2, 0.2, 1)
+            # trans = transformations.get_trans_mx(np.array([-x, -y, 0]))
+            # rotate = transformations.get_rot_mx(0, 0, -np.deg2rad(f.angle))
+            # origin = transformations.get_trans_mx(np.array([windowSize/2, windowSize/2, 0]))
+            # scale = transformations.get_scale_mx(0.2, 0.2, 1)
+            #print f.angle
+            rad = np.radians(f.angle)
+            #print rad
+            trans = np.array([
+            	[1, 0, -x],
+            	[0, 1, -y],
+            	[0, 0, 1]
+            	])
 
-            fullTransMx = trans * rotate * scale * origin
-            transMx [:2, :2]=  fullTransMx [:2, 2][:2, 3]
+            rotate = np.array([
+            	[math.cos(rad), -math.sin(rad), -x],
+            	[math.sin(rad), math.cos(rad), -y],
+            	[0, 0, 1]
+            	])
+            scale = np.array([
+            	[0.2, 0, 0],
+            	[0, 0.2, 0],
+            	[0, 0, 1]
+            	])
 
+            origin = np.array([
+            	[1, 0, windowSize/2],
+            	[0, 1, windowSize/2],
+            	[0, 0, 1]
+            	])
+
+            fullTransMx = np.dot(trans, np.dot(scale, np.dot(rotate, origin)))
+            transMx =  fullTransMx [:2]
+            #print "shape: ", transMx.shape
             # TODO-BLOCK-END
 
             # Call the warp affine function to do the mapping
@@ -323,25 +353,72 @@ class MOPSFeatureDescriptor(FeatureDescriptor):
             # variance. If the variance is zero then set the descriptor
             # vector to zero. Lastly, write the vector to desc.
             # TODO-BLOCK-BEGIN
-            mean = 0.0
-            for row in range(windowSize):
-                for col in range(windowSize):
-                    mean += destImage[col][row]
-            mean = mean/(windowSize * windowSize)
 
-            variance = 0.0
-            for row in range(windowSize):
-                for col in range(windowSize):
-                    variance += pow(destImage[col][row] - mean, 2)
-
-            stndiv = sqrt(variance / (windowSize * windowSize) -1)
-
-            for row in range(windowSize):
-                for col in range(windowSize):
-                    desc[col][row] = (destImage[col][row] - mean)/stndiv
+            mean = np.mean(destImage)
+            stndiv = np.std(destImage)
+            if stndiv > -1e-10 and stndiv < 1e-10:
+            	desc[i] = np.zeros((1, windowSize * windowSize))
+            else:
+	            normal = (destImage - mean)/stndiv
+	            desc[i] = np.reshape(normal, (1, windowSize*windowSize))
+            #print desc[i].shape
+                    
             # TODO-BLOCK-END
-
         return desc
+        # for i, f in enumerate(keypoints):
+        #     # TODO 5: Compute the transform as described by the feature
+        #     # location/orientation. You will need to compute the transform
+        #     # from each pixel in the 40x40 rotated window surrounding
+        #     # the feature to the appropriate pixels in the 8x8 feature
+        #     # descriptor image.
+        #     transMx = np.zeros((2, 3))
+
+        #     # TODO-BLOCK-BEGIN
+        #     x, y = f.pt
+        #     theta = np.deg2rad(f.angle)
+
+        #     T1 = np.array([
+        #         [1, 0,  -x],
+        #         [0, 1,  -y],
+        #         [0, 0,  1]
+        #     ])
+        #     R = np.array([
+        #         [math.cos(theta), -math.sin(theta), 0],
+        #         [math.sin(theta), math.cos(theta), 0],
+        #         [0, 0, 1]
+        #     ])
+        #     S = np.array([
+        #         [0.2, 0,  0],
+        #         [0,  0.2, 0],
+        #         [0,  0,   1]
+        #     ])
+
+        #     T2 = np.array([
+        #         [1, 0,  windowSize/2],
+        #         [0, 1,  windowSize/2],
+        #         [0, 0,  1]
+        #     ])
+        #     transMx_full = np.dot(T2, np.dot(S, np.dot(R, T1)))
+        #     transMx = transMx_full[:2]
+        #     destImage = cv2.warpAffine(grayImage, transMx,
+        #                                (windowSize, windowSize), flags=cv2.INTER_LINEAR)
+
+        #     # TODO 6: Normalize the descriptor to have zero mean and unit
+        #     # variance. If the variance is zero then set the descriptor
+        #     # vector to zero. Lastly, write the vector to desc.
+        #     # TODO-BLOCK-BEGIN
+
+        #     stddev = np.std(destImage)
+        #     mean = np.mean(destImage)
+        #     tol = 1e-5
+        #     if stddev > -tol and stddev < tol:  # stddev == 0 within tolerance
+        #         desc[i] = np.zeros((1, windowSize * windowSize))
+        #     else:
+        #         normalized = (destImage - mean) / stddev
+        #         desc[i] = np.reshape(normalized, (1, windowSize * windowSize))
+        #         # TODO-BLOCK-END
+        # return desc
+
 
 
 class ORBFeatureDescriptor(KeypointDetector):
@@ -464,9 +541,28 @@ class SSDFeatureMatcher(FeatureMatcher):
         # Note: multiple features from the first image may match the same
         # feature in the second image.
         # TODO-BLOCK-BEGIN
-        raise Exception("TODO in features.py not implemented")
-        # TODO-BLOCK-END
 
+        distances = scipy.spatial.distance.cdist(desc1,desc2, 'euclidean')
+        h, w = distances.shape
+
+        for i in range(h):
+        	dm = cv2.DMatch()
+        	dm.queryIdx = i
+        	dm.trainIdx = np.argmin(distances[i])
+        	dm.distance = distances[i, dm.trainIdx]
+        	matches.append(dm)
+
+        distances = scipy.spatial.distance.cdist(desc2,desc1, 'euclidean')
+        h, w = distances.shape
+
+        for i in range(h):
+        	dm = cv2.DMatch()
+        	dm.queryIdx = i
+        	dm.trainIdx = np.argmin(distances[i])
+        	dm.distance = distances[i, dm.trainIdx]
+        	matches.append(dm)
+
+        # TODO-BLOCK-END
         return matches
 
 
@@ -506,7 +602,31 @@ class RatioFeatureMatcher(FeatureMatcher):
         # feature in the second image.
         # You don't need to threshold matches in this function
         # TODO-BLOCK-BEGIN
-        raise Exception("TODO in features.py not implemented")
+        distances = scipy.spatial.distance.cdist(desc1,desc2)
+        h, w = distances.shape
+        for i in range(h):
+        	dm = cv2.DMatch()
+        	dm.queryIdx = i
+        	first, second = np.argsort(distances[i])[::1][:2]
+        	dm.trainIdx = first
+        	if (distances[i, second] == 0):
+        		dm.distance = 0
+        	dm.distance = distances[i, first]/distances[i, second]
+        	matches.append(dm)
+
+        distances = scipy.spatial.distance.cdist(desc2,desc1)
+        h, w = distances.shape
+        for i in range(h):
+        	dm = cv2.DMatch()
+        	dm.queryIdx = i
+        	first, second = np.argsort(distances[i])[::1][:2]
+        	dm.trainIdx = first
+        	if (distances[i, second] == 0):
+        		dm.distance = 0
+        	dm.distance = distances[i, first]/distances[i, second]
+        	matches.append(dm)
+
+
         # TODO-BLOCK-END
 
         return matches
