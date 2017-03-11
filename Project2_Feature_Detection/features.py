@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import scipy
 from scipy import ndimage, spatial
-
+from scipy.ndimage.filters import maximum_filter
 import transformations
 
 
@@ -93,17 +93,44 @@ class HarrisKeypointDetector(KeypointDetector):
 
         harrisImage = np.zeros(srcImage.shape[:2])
         orientationImage = np.zeros(srcImage.shape[:2])
+        #compute the derivative image of x axis and y axis
+        # dx = ndimage.sobel(srcImage,0)
+        # dy = ndimage.sobel(srcImage,1)
+        sobelx = cv2.Sobel(srcImage,cv2.CV_64F,1,0,ksize=3,borderType = cv2.BORDER_REFLECT)
+        sobely = cv2.Sobel(srcImage,cv2.CV_64F,0,1,ksize=3,borderType = cv2.BORDER_REFLECT)
+        #compute products of derivatives at every pixel
+        Ix2 = sobelx * sobelx
+        Iy2 = sobely * sobely
+        Ixy = sobelx * sobely
+
+        #compute a weighted sum with w = 5*5 Gaussian, sigma = 0.5
+    #compute the sums of the products of derivatives at each pixel
+        Sx2 = cv2.GaussianBlur(Ix2,(5,5),0.5)
+        Sy2 = cv2.GaussianBlur(Iy2,(5,5),0.5)
+        Sxy = cv2.GaussianBlur(Ixy,(5,5),0.5)
+            
+        
+        #compute the harris corner strength (harris score)
+        det = Sx2*Sy2 - Sxy*Sxy
+        trace = Sx2+Sy2
+        harrisImage = det - 0.1* (trace**2)
+
+
+        #orientationImage = np.arctan2(sobely,sobelx) / np.pi * 180
+        orientationImage = np.rad2deg(np.arctan2(sobely,sobelx)) 
 
         # TODO 1: Compute the harris corner strength for 'srcImage' at
         # each pixel and store in 'harrisImage'.  See the project page
         # for direction on how to do this. Also compute an orientation
         # for each pixel and store it in 'orientationImage.'
         # TODO-BLOCK-BEGIN
-        raise Exception("TODO in features.py not implemented")
+        #raise Exception("TODO in features.py not implemented")
         # TODO-BLOCK-END
-
+    #for y in range(height):
+        #print(orientationImage[:,y])
+           
         return harrisImage, orientationImage
-
+    
     def computeLocalMaxima(self, harrisImage):
         '''
         Input:
@@ -115,11 +142,12 @@ class HarrisKeypointDetector(KeypointDetector):
                          the pixel value is the local maxima in
                          its 7x7 neighborhood.
         '''
-        destImage = np.zeros_like(harrisImage, np.bool)
+        ismax = scipy.ndimage.filters.maximum_filter(harrisImage, size = 7)
+        destImage = np.equal(ismax, harrisImage)
 
         # TODO 2: Compute the local maxima image
         # TODO-BLOCK-BEGIN
-        raise Exception("TODO in features.py not implemented")
+        # raise Exception("TODO in features.py not implemented")
         # TODO-BLOCK-END
 
         return destImage
@@ -161,13 +189,16 @@ class HarrisKeypointDetector(KeypointDetector):
                     continue
 
                 f = cv2.KeyPoint()
-
+                f.size = 10
+                f.pt = (x,y)
+                f.angle = orientationImage[y,x]
+                f.response = harrisImage[y,x]
                 # TODO 3: Fill in feature f with location and orientation
                 # data here. Set f.size to 10, f.pt to the (x,y) coordinate,
                 # f.angle to the orientation in degrees and f.response to
                 # the Harris score
                 # TODO-BLOCK-BEGIN
-                raise Exception("TODO in features.py not implemented")
+                #raise Exception("TODO in features.py not implemented")
                 # TODO-BLOCK-END
 
                 features.append(f)
@@ -230,7 +261,12 @@ class SimpleFeatureDescriptor(FeatureDescriptor):
             # sampled centered on the feature point. Store the descriptor
             # as a row-major vector. Treat pixels outside the image as zero.
             # TODO-BLOCK-BEGIN
-            raise Exception("TODO in features.py not implemented")
+            myRange = 5/2
+            index = 0;
+            for row in range(-myRange, myRange):
+                for col in range(-myRange, myRange):
+                    desc[index] = grayImage[x+col][y+row]
+                    index += 1
             # TODO-BLOCK-END
 
         return desc
@@ -266,7 +302,16 @@ class MOPSFeatureDescriptor(FeatureDescriptor):
             transMx = np.zeros((2, 3))
 
             # TODO-BLOCK-BEGIN
-            raise Exception("TODO in features.py not implemented")
+            x, y = f.pt
+
+            trans = transformations.get_trans_mx(np.array([x, y, 0]))
+            rotate = transformations.get_rot_mx(0, 0, f.angle)
+            origin = transformations.get_trans_mx(np.array([-windowSize/2, -windowSize/2, 0]))
+            scale = transformations.get_scale_mx(0.2, 0.2, 1)
+
+            fullTransMx = trans * rotate * scale * origin
+            transMx [:2, :2]=  fullTransMx [:2, 2][:2, 3]
+
             # TODO-BLOCK-END
 
             # Call the warp affine function to do the mapping
@@ -278,7 +323,22 @@ class MOPSFeatureDescriptor(FeatureDescriptor):
             # variance. If the variance is zero then set the descriptor
             # vector to zero. Lastly, write the vector to desc.
             # TODO-BLOCK-BEGIN
-            raise Exception("TODO in features.py not implemented")
+            mean = 0.0
+            for row in range(windowSize):
+                for col in range(windowSize):
+                    mean += destImage[col][row]
+            mean = mean/(windowSize * windowSize)
+
+            variance = 0.0
+            for row in range(windowSize):
+                for col in range(windowSize):
+                    variance += pow(destImage[col][row] - mean, 2)
+
+            stndiv = sqrt(variance / (windowSize * windowSize) -1)
+
+            for row in range(windowSize):
+                for col in range(windowSize):
+                    desc[col][row] = (destImage[col][row] - mean)/stndiv
             # TODO-BLOCK-END
 
         return desc
